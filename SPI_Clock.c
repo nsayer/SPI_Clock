@@ -228,12 +228,12 @@ int main(int argc, char **argv) {
 		unsigned int tenth_val = (unsigned int)(now.tv_nsec / (100L * 1000L * 1000L));
 		if (tenth_val != last_tenth) {
 			last_tenth = tenth_val;
-			unsigned char val = 0x7e;
+			unsigned char val = (unsigned char)(~_BV(7)); // All decode except 7.
 			if (ampm && h < 10) {
-				val &= ~0x1; // for the 12 hour display, blank leading 0 for hour
+				val &= ~_BV(0); // for the 12 hour display, blank leading 0 for hour
 			}
 			if (!tenth) {
-				val &= ~0x40;
+				val &= ~_BV(6); // turn off the tenth digit decode. We'll write a 0.
 			}
 
 			write_reg(MAX_REG_DEC_MODE, val);
