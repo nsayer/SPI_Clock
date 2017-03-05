@@ -125,7 +125,7 @@ void cleanup(int signo) {
 }
 
 void usage() {
-	printf("Usage: clock [-a][-b n]\n");
+	printf("Usage: clock [-a][-b n][-c][-d][-t]\n");
 	printf("   -2 : 24 hour display mode (instead of AM/PM)\n");
 	printf("   -b : set brightness 0-15\n");
 	printf("   -c : turn colons off\n");
@@ -142,7 +142,7 @@ int main(int argc, char **argv) {
 	unsigned char background = 1;
 
 	int c;
-	while((c = getopt(argc, argv, "2b:ct")) > 0) {
+	while((c = getopt(argc, argv, "2b:cdt")) > 0) {
 		switch(c) {
 			case '2':
 				ampm = 0;
@@ -175,6 +175,10 @@ int main(int argc, char **argv) {
 	}
 
 	spi_fd = open("/dev/spidev0.0", O_RDWR);
+	if (spi_fd < 0) {
+		perror("Error opening device");
+		exit(1);
+	}
 
 	int spi_mode = SPI_MODE_0;
 	int spi_bits = 8;
