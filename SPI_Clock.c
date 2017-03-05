@@ -186,8 +186,10 @@ int main(int argc, char **argv) {
 		exit(1);
 	}
 
+	// Clock is active high, latching on leading edge.
 	int spi_mode = SPI_MODE_0;
 	int spi_bits = 8;
+	// Device max is 26 MHz. Let's ask for 20 MHz.
 	int spi_speed = 20000000;
 
 	if (ioctl(spi_fd, SPI_IOC_WR_MODE, &spi_mode)) {
