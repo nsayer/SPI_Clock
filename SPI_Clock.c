@@ -52,6 +52,7 @@ For the RX pin, it has a diode + pull-up level shifter (with the pull-up from
 #include <signal.h>
 #include <time.h>
 #include <sched.h>
+#include <sys/file.h>
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <fcntl.h>
@@ -177,6 +178,11 @@ int main(int argc, char **argv) {
 	spi_fd = open("/dev/spidev0.0", O_RDWR);
 	if (spi_fd < 0) {
 		perror("Error opening device");
+		exit(1);
+	}
+
+	if (flock(spi_fd, LOCK_EX | LOCK_NB) < 0) {
+		perror("Error locking device");
 		exit(1);
 	}
 
