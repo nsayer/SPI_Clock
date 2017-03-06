@@ -59,8 +59,8 @@ For the RX pin, it has a diode + pull-up level shifter (with the pull-up from
 #include <sys/ioctl.h>
 #include <linux/spi/spidev.h>
 
-// 10 milliseconds
-#define SLEEP_NSEC (10L * 1000L * 1000L)
+// 5 milliseconds
+#define SLEEP_NSEC (5L * 1000L * 1000L)
 
 #define _BV(n) (1 << n)
 
@@ -126,8 +126,9 @@ void cleanup(int signo) {
 }
 
 void usage() {
-	printf("Usage: clock [-a][-b n][-c][-d][-t]\n");
+	printf("Usage: clock [-a][-B][-b n][-c][-d][-t]\n");
 	printf("   -2 : 24 hour display mode (instead of AM/PM)\n");
+	printf("   -B : blink the colons\n");
 	printf("   -b : set brightness 0-15\n");
 	printf("   -c : turn colons off\n");
 	printf("   -d : Don't daemonize (remain in foreground)\n");
@@ -139,11 +140,12 @@ int main(int argc, char **argv) {
 	unsigned char ampm = 1; // 0 for a 24 hour display
 	unsigned char brightness = 15; // 0-15
 	unsigned char colon = 1;
+	unsigned char colon_blink = 0;
 	unsigned char tenth = 1;
 	unsigned char background = 1;
 
 	int c;
-	while((c = getopt(argc, argv, "2b:cdt")) > 0) {
+	while((c = getopt(argc, argv, "2Bb:cdt")) > 0) {
 		switch(c) {
 			case '2':
 				ampm = 0;
@@ -151,6 +153,9 @@ int main(int argc, char **argv) {
 			case 'b':
 				brightness = atoi(optarg) & 0xf;
 				break;
+			case 'B':
+				colon_blink = 1;
+				break;	
 			case 'c':
 				colon = 0;
 				break;	
@@ -232,14 +237,18 @@ int main(int argc, char **argv) {
 		if (ampm) {
 			if (h == 0) { h = 12; }
 			else if (h == 12) { pm = 1; }
-			else {
-				if (h > 12) { h -= 12; pm = 1; }
-                	}
+			else if (h > 12) { h -= 12; pm = 1; }
                 }
 
 		unsigned int tenth_val = (unsigned int)(now.tv_nsec / (100L * 1000L * 1000L));
 		if (tenth_val != last_tenth) {
 			last_tenth = tenth_val;
+
+			if (tenth_val == 0) {
+				// synchronize the blink timer.
+				write_reg(MAX_REG_CONFIG, MAX_REG_CONFIG_B | MAX_REG_CONFIG_S | MAX_REG_CONFIG_E | MAX_REG_CONFIG_T);
+			}
+
 			unsigned char val = (unsigned char)(~_BV(7)); // All decode except 7.
 			if (ampm && h < 10) {
 				val &= ~_BV(0); // for the 12 hour display, blank leading 0 for hour
@@ -247,15 +256,16 @@ int main(int argc, char **argv) {
 			if (!tenth) {
 				val &= ~_BV(6); // turn off the tenth digit decode. We'll write a 0.
 			}
-
 			write_reg(MAX_REG_DEC_MODE, val);
-			write_reg(MAX_REG_MASK_BOTH + 0, h / 10);
-			write_reg(MAX_REG_MASK_BOTH + 1, h % 10);
-			write_reg(MAX_REG_MASK_BOTH + 2, lt.tm_min / 10);
-			write_reg(MAX_REG_MASK_BOTH + 3, lt.tm_min % 10);
-			write_reg(MAX_REG_MASK_BOTH + 4, lt.tm_sec / 10);
-			write_reg(MAX_REG_MASK_BOTH + 5, (lt.tm_sec % 10) | (tenth?MASK_DP:0));
-			write_reg(MAX_REG_MASK_BOTH + 6, tenth?tenth_val:0);
+
+			write_reg(MAX_REG_MASK_BOTH | 0, h / 10);
+			write_reg(MAX_REG_MASK_BOTH | 1, h % 10);
+			write_reg(MAX_REG_MASK_BOTH | 2, lt.tm_min / 10);
+			write_reg(MAX_REG_MASK_BOTH | 3, lt.tm_min % 10);
+			write_reg(MAX_REG_MASK_BOTH | 4, lt.tm_sec / 10);
+			write_reg(MAX_REG_MASK_BOTH | 5, (lt.tm_sec % 10) | (tenth?MASK_DP:0));
+			write_reg(MAX_REG_MASK_BOTH | 6, tenth?tenth_val:0);
+
 			val = 0;
 			if (colon) {
 				val |= MASK_COLON_HM | MASK_COLON_MS;
@@ -263,7 +273,11 @@ int main(int argc, char **argv) {
 			if (ampm) {
 				val |= (pm?MASK_PM:MASK_AM);
 			}
-			write_reg(MAX_REG_MASK_BOTH + 7, val);
+			write_reg(MAX_REG_MASK_BOTH | 7, val);
+			if (colon_blink) {
+				// P1 gets the colons removed
+				write_reg(MAX_REG_MASK_P1 | 7, val & ~(MASK_COLON_HM | MASK_COLON_MS));
+			}
 		}
 		struct timespec sleepspec;
 		sleepspec.tv_sec = 0;
