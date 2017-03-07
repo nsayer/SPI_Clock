@@ -76,9 +76,9 @@ For the RX pin, it has a diode + pull-up level shifter (with the pull-up from
 #define MAX_REG_CONFIG_S _BV(0)
 #define MAX_REG_TEST 0x07
 // P0 and P1 are planes - used when blinking is turned on
-// or the mask with the digit number 0-7. On the hardware, 0-5
-// are the digits from left to right (D5 is single seconds, D0
-// is tens of hours). The D7 and D6 decimal points are AM and PM (respectively).
+// or the mask with the digit number 0-7. On the hardware, 0-6
+// are the digits from left to right (D6 is tenths of seconds, D0
+// is tens of hours). D7 is AM, PM and the four LEDs for the colons.
 // To blink, you write different stuff to P1 and P0 and turn on
 // blinking in the config register (bit E to turn on, bit B for speed).
 #define MAX_REG_MASK_P0 0x20
