@@ -32,7 +32,7 @@ The connections on the raspberry pi are
 
 DIN: pin 21: SPI0_MOSI / GPIO 10
 CLK: pin 23: SPI0_SCLK / GPIO 11
-!CS: pin 24: SPI0_CEN_N / GPIO 8
+!CS: pin 24: SPI0_CE0_N / GPIO 8
 
 The clock board will also supply 5 volts to pins 2 and 4 to power the Pi.
 
@@ -107,6 +107,7 @@ For the RX pin, it has a diode + pull-up level shifter (with the pull-up from
 int spi_fd;
 
 void write_reg(unsigned char reg, unsigned char data) {
+	// We write two bytes - the register number and then the data.
 	unsigned char msgbuf[2];
 	msgbuf[0] = reg;
 	msgbuf[1] = data;
