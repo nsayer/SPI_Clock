@@ -104,14 +104,15 @@ For the RX pin, it has a diode + pull-up level shifter (with the pull-up from
 #define MASK_AM (MASK_A)
 #define MASK_PM (MASK_D)
 
-#define DIGIT_10_HR 0
-#define DIGIT_1_HR 1
-#define DIGIT_10_MIN 2
-#define DIGIT_1_MIN 3
-#define DIGIT_10_SEC 4
-#define DIGIT_1_SEC 5
-#define DIGIT_100_MSEC 6
-#define DIGIT_MISC 7
+// Digit mapping
+#define DIGIT_10_HR (0)
+#define DIGIT_1_HR (1)
+#define DIGIT_10_MIN (2)
+#define DIGIT_1_MIN (3)
+#define DIGIT_10_SEC (4)
+#define DIGIT_1_SEC (5)
+#define DIGIT_100_MSEC (6)
+#define DIGIT_MISC (7)
 
 int spi_fd;
 
