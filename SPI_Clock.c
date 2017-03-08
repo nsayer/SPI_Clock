@@ -104,6 +104,15 @@ For the RX pin, it has a diode + pull-up level shifter (with the pull-up from
 #define MASK_AM (MASK_A)
 #define MASK_PM (MASK_D)
 
+#define DIGIT_10_HR 0
+#define DIGIT_1_HR 1
+#define DIGIT_10_MIN 2
+#define DIGIT_1_MIN 3
+#define DIGIT_10_SEC 4
+#define DIGIT_1_SEC 5
+#define DIGIT_100_MSEC 6
+#define DIGIT_MISC 7
+
 int spi_fd;
 
 void write_reg(unsigned char reg, unsigned char data) {
@@ -230,16 +239,6 @@ int main(int argc, char **argv) {
 		if (clock_gettime(CLOCK_REALTIME, &now)) {
 			perror("clock_gettime");
 		}
-		struct tm lt;
-		localtime_r(&now.tv_sec, &lt);
-
-		unsigned char h = lt.tm_hour;
-		unsigned char pm = 0;
-		if (ampm) {
-			if (h == 0) { h = 12; }
-			else if (h == 12) { pm = 1; }
-			else if (h > 12) { h -= 12; pm = 1; }
-                }
 
 		unsigned int tenth_val = (unsigned int)(now.tv_nsec / (100L * 1000L * 1000L));
 		if (tenth_val != last_tenth) {
@@ -250,22 +249,33 @@ int main(int argc, char **argv) {
 				write_reg(MAX_REG_CONFIG, MAX_REG_CONFIG_B | MAX_REG_CONFIG_S | MAX_REG_CONFIG_E | MAX_REG_CONFIG_T);
 			}
 
+			struct tm lt;
+			localtime_r(&now.tv_sec, &lt);
+
+			unsigned char h = lt.tm_hour;
+			unsigned char pm = 0;
+			if (ampm) {
+				if (h == 0) { h = 12; }
+				else if (h == 12) { pm = 1; }
+				else if (h > 12) { h -= 12; pm = 1; }
+			}
+
 			unsigned char val = (unsigned char)(~_BV(7)); // All decode except 7.
 			if (ampm && h < 10) {
-				val &= ~_BV(0); // for the 12 hour display, blank leading 0 for hour
+				val &= ~_BV(DIGIT_10_HR); // for the 12 hour display, blank leading 0 for hour
 			}
 			if (!tenth) {
-				val &= ~_BV(6); // turn off the tenth digit decode. We'll write a 0.
+				val &= ~_BV(DIGIT_100_MSEC); // turn off the tenth digit decode. We'll write a 0.
 			}
 			write_reg(MAX_REG_DEC_MODE, val);
 
-			write_reg(MAX_REG_MASK_BOTH | 0, h / 10);
-			write_reg(MAX_REG_MASK_BOTH | 1, h % 10);
-			write_reg(MAX_REG_MASK_BOTH | 2, lt.tm_min / 10);
-			write_reg(MAX_REG_MASK_BOTH | 3, lt.tm_min % 10);
-			write_reg(MAX_REG_MASK_BOTH | 4, lt.tm_sec / 10);
-			write_reg(MAX_REG_MASK_BOTH | 5, (lt.tm_sec % 10) | (tenth?MASK_DP:0));
-			write_reg(MAX_REG_MASK_BOTH | 6, tenth?tenth_val:0);
+			write_reg(MAX_REG_MASK_BOTH | DIGIT_10_HR, h / 10);
+			write_reg(MAX_REG_MASK_BOTH | DIGIT_1_HR, h % 10);
+			write_reg(MAX_REG_MASK_BOTH | DIGIT_10_MIN, lt.tm_min / 10);
+			write_reg(MAX_REG_MASK_BOTH | DIGIT_1_MIN, lt.tm_min % 10);
+			write_reg(MAX_REG_MASK_BOTH | DIGIT_10_SEC, lt.tm_sec / 10);
+			write_reg(MAX_REG_MASK_BOTH | DIGIT_1_SEC, (lt.tm_sec % 10) | (tenth?MASK_DP:0));
+			write_reg(MAX_REG_MASK_BOTH | DIGIT_100_MSEC, tenth?tenth_val:0);
 
 			val = 0;
 			if (colon) {
@@ -274,10 +284,10 @@ int main(int argc, char **argv) {
 			if (ampm) {
 				val |= (pm?MASK_PM:MASK_AM);
 			}
-			write_reg(MAX_REG_MASK_BOTH | 7, val);
+			write_reg(MAX_REG_MASK_BOTH | DIGIT_MISC, val);
 			if (colon_blink) {
 				// P1 gets the colons removed
-				write_reg(MAX_REG_MASK_P1 | 7, val & ~(MASK_COLON_HM | MASK_COLON_MS));
+				write_reg(MAX_REG_MASK_P1 | DIGIT_MISC, val & ~(MASK_COLON_HM | MASK_COLON_MS));
 			}
 		}
 		struct timespec sleepspec;
