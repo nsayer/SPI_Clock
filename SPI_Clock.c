@@ -59,9 +59,6 @@ For the RX pin, it has a diode + pull-up level shifter (with the pull-up from
 #include <sys/ioctl.h>
 #include <linux/spi/spidev.h>
 
-// 5 milliseconds
-#define SLEEP_NSEC (5L * 1000L * 1000L)
-
 #define _BV(n) (1 << n)
 
 // The MAX6951 registers and their bits
@@ -242,6 +239,7 @@ int main(int argc, char **argv) {
 		}
 
 		unsigned int tenth_val = (unsigned int)(now.tv_nsec / (100L * 1000L * 1000L));
+		unsigned int time_remaining = (100L * 1000L * 1000L) - (unsigned int)(now.tv_nsec % (100L * 1000L * 1000L));
 		if (tenth_val != last_tenth) {
 			last_tenth = tenth_val;
 
@@ -293,7 +291,7 @@ int main(int argc, char **argv) {
 		}
 		struct timespec sleepspec;
 		sleepspec.tv_sec = 0;
-		sleepspec.tv_nsec = SLEEP_NSEC;
+		sleepspec.tv_nsec = (time_remaining * 95) / 100;
 		nanosleep(&sleepspec, NULL);
 	}
 }
