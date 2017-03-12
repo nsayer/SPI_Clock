@@ -113,7 +113,7 @@ For the RX pin, it has a diode + pull-up level shifter (with the pull-up from
 
 int spi_fd;
 
-void write_reg(unsigned char reg, unsigned char data) {
+static void write_reg(unsigned char reg, unsigned char data) {
 	// We write two bytes - the register number and then the data.
 	unsigned char msgbuf[2];
 	msgbuf[0] = reg;
@@ -128,12 +128,12 @@ void write_reg(unsigned char reg, unsigned char data) {
 	}
 }
 
-void cleanup(int signo) {
+static void cleanup(int signo) {
 	write_reg(MAX_REG_CONFIG, 0); // sleep now.
 	exit(1);
 }
 
-void usage() {
+static void usage() {
 	printf("Usage: clock [-a][-B][-b n][-c][-d][-t]\n");
 	printf("   -2 : 24 hour display mode (instead of AM/PM)\n");
 	printf("   -B : blink the colons\n");
