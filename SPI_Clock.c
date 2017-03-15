@@ -42,6 +42,11 @@ For the RX pin, it has a diode + pull-up level shifter (with the pull-up from
 
 */
 
+// There is some latency in the system that must be accounted for.
+// This value is a guess based on observations made on a single
+// system. YMMV. See the fprintf() in update_display().
+#define FUDGE (230L * 1000L)
+
 #define _BSD_SOURCE
 #define _POSIX_C_SOURCE 199309L
 
@@ -49,6 +54,7 @@ For the RX pin, it has a diode + pull-up level shifter (with the pull-up from
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <pthread.h>
 #include <signal.h>
 #include <time.h>
 #include <sched.h>
@@ -112,6 +118,11 @@ For the RX pin, it has a diode + pull-up level shifter (with the pull-up from
 #define DIGIT_MISC (7)
 
 int spi_fd;
+timer_t timer_id;
+unsigned char ampm = 1; // 0 for a 24 hour display
+unsigned char colon = 1;
+unsigned char colon_blink = 0;
+unsigned char tenth = 1;
 
 static void write_reg(unsigned char reg, unsigned char data) {
 	// We write two bytes - the register number and then the data.
@@ -143,13 +154,117 @@ static void usage() {
 	printf("   -t : turn tenth of a second digit off\n");
 }
 
+static void schedule_timer() {
+	struct timespec now;
+	if (clock_gettime(CLOCK_REALTIME, &now)) {
+		perror("clock_gettime");
+	}
+	// We want to round to the nearest tenth. We can start by tuncating to the nearest
+	// hundredth
+	unsigned int hundredth_val = (unsigned int)(now.tv_nsec / (10L * 1000L * 1000L));
+	// We actually want the *next* tenth of a second.
+	unsigned int tenth_val = (hundredth_val + 5) / 10 + 1;
+	while (tenth_val >= 10) {
+		now.tv_sec++;
+		tenth_val -= 10;
+	}
+	now.tv_nsec = tenth_val * (100L * 1000L * 1000L);
+	// We want the alarm to go off a little early (FUDGE).
+	if (tenth_val != 0) {
+		now.tv_nsec -= FUDGE;
+	} else {
+		// Backing up a bit from zero means crossing the second boundary.
+		now.tv_nsec = (1000L * 1000L * 1000L) - FUDGE;
+		now.tv_sec--;
+	}
+	// We want to individually schedule each one rather than use the interval,
+	// because it gives us better control in the face of variable response latency.
+	// We will simply specify exactly when we desire to be woken up every time.
+	struct itimerspec my_itimerspec;
+	my_itimerspec.it_interval.tv_sec = 0;
+	my_itimerspec.it_interval.tv_nsec = 0;
+	my_itimerspec.it_value = now;
+	if (timer_settime(timer_id, TIMER_ABSTIME, &my_itimerspec, NULL) < 0) {
+		perror("timer_settime");
+		exit(1);
+	}
+}
+
+static void update_display(union sigval ignore) {
+
+	struct timespec now;
+	if (clock_gettime(CLOCK_REALTIME, &now)) {
+		perror("clock_gettime");
+	}
+
+	// This can be used to figure out the FUDGE value. You want this line
+	// to print small numbers (large ones that start with 99 are negative
+	// values in disguise).
+	//fprintf(stderr, "%ld\n", now.tv_nsec % (100L * 1000L * 1000L));
+
+	// We want to round to the nearest tenth, which means truncating to the nearest hundredth.
+	unsigned int hundredth_val = (unsigned int)(now.tv_nsec / (10L * 1000L * 1000L));
+	unsigned int tenth_val = (hundredth_val + 5) / 10;
+	// if we rounded up, we must adjust the seconds.
+	while (tenth_val >= 10) {
+		now.tv_sec++;
+		tenth_val -= 10;
+	}
+		
+
+	if (tenth_val == 0) {
+		// synchronize the blink timer.
+		write_reg(MAX_REG_CONFIG, MAX_REG_CONFIG_B | MAX_REG_CONFIG_S | MAX_REG_CONFIG_E | MAX_REG_CONFIG_T);
+	}
+
+	struct tm lt;
+	localtime_r(&now.tv_sec, &lt);
+
+	unsigned char h = lt.tm_hour;
+	unsigned char pm = 0;
+	if (ampm) {
+		if (h == 0) { h = 12; }
+		else if (h == 12) { pm = 1; }
+		else if (h > 12) { h -= 12; pm = 1; }
+	}
+
+	unsigned char val = (unsigned char)(~_BV(7)); // All decode except 7.
+	if (ampm && h < 10) {
+		val &= ~_BV(DIGIT_10_HR); // for the 12 hour display, blank leading 0 for hour
+	}
+	if (!tenth) {
+		val &= ~_BV(DIGIT_100_MSEC); // turn off the tenth digit decode. We'll write a 0.
+	}
+	write_reg(MAX_REG_DEC_MODE, val);
+
+	write_reg(MAX_REG_MASK_BOTH | DIGIT_10_HR, h / 10);
+	write_reg(MAX_REG_MASK_BOTH | DIGIT_1_HR, h % 10);
+	write_reg(MAX_REG_MASK_BOTH | DIGIT_10_MIN, lt.tm_min / 10);
+	write_reg(MAX_REG_MASK_BOTH | DIGIT_1_MIN, lt.tm_min % 10);
+	write_reg(MAX_REG_MASK_BOTH | DIGIT_10_SEC, lt.tm_sec / 10);
+	write_reg(MAX_REG_MASK_BOTH | DIGIT_1_SEC, (lt.tm_sec % 10) | (tenth?MASK_DP:0));
+	write_reg(MAX_REG_MASK_BOTH | DIGIT_100_MSEC, tenth?tenth_val:0);
+
+	val = 0;
+	if (colon) {
+		val |= MASK_COLON_HM | MASK_COLON_MS;
+	}
+	if (ampm) {
+		val |= (pm?MASK_PM:MASK_AM);
+	}
+	write_reg(MAX_REG_MASK_BOTH | DIGIT_MISC, val);
+	if (colon_blink) {
+		// P1 gets the colons removed
+		write_reg(MAX_REG_MASK_P1 | DIGIT_MISC, val & ~(MASK_COLON_HM | MASK_COLON_MS));
+	}
+
+	// Set us up the bomb.
+	schedule_timer();
+}
+
 int main(int argc, char **argv) {
 
-	unsigned char ampm = 1; // 0 for a 24 hour display
 	unsigned char brightness = 15; // 0-15
-	unsigned char colon = 1;
-	unsigned char colon_blink = 0;
-	unsigned char tenth = 1;
 	unsigned char background = 1;
 
 	int c;
@@ -221,6 +336,25 @@ int main(int argc, char **argv) {
 		daemon(0, 0);
 	}
 
+	pthread_attr_t my_pthread_attr;
+	if (pthread_attr_init(&my_pthread_attr) < 0) {
+		perror("pthread_attr_init");
+		exit(1);
+	}
+	if (pthread_attr_setschedpolicy(&my_pthread_attr, SCHED_RR) < 0) {
+		perror("pthread_attr_setschedpolicy");
+		exit(1);
+	}
+	struct sigevent my_sigevent;
+	my_sigevent.sigev_notify = SIGEV_THREAD;
+	my_sigevent.sigev_value.sival_int = 0;
+	my_sigevent.sigev_notify_function = update_display;
+	my_sigevent.sigev_notify_attributes = &my_pthread_attr;
+	if (timer_create(CLOCK_REALTIME, &my_sigevent, &timer_id) < 0) {
+		perror("timer_create");
+		exit(1);
+	}
+
         // Turn off the shut-down register, clear the digit data
         write_reg(MAX_REG_CONFIG, MAX_REG_CONFIG_R | MAX_REG_CONFIG_B | MAX_REG_CONFIG_S | MAX_REG_CONFIG_E);
         write_reg(MAX_REG_SCAN_LIMIT, 7); // display all 8 digits
@@ -230,69 +364,14 @@ int main(int argc, char **argv) {
         sleep(1);
         write_reg(MAX_REG_TEST, 0);
 
+	// Force the first update. It will schedule everything after.
+	union sigval ignore;
+	update_display(ignore);
 
 	while(1) {
-		static unsigned int last_tenth = 12;
-		struct timespec now;
-		if (clock_gettime(CLOCK_REALTIME, &now)) {
-			perror("clock_gettime");
+		// Dirt nap
+		if (select(0, NULL, NULL, NULL, NULL) < 0) {
+			perror("select");
 		}
-
-		unsigned int tenth_val = (unsigned int)(now.tv_nsec / (100L * 1000L * 1000L));
-		unsigned int time_remaining = (100L * 1000L * 1000L) - (unsigned int)(now.tv_nsec % (100L * 1000L * 1000L));
-		if (tenth_val != last_tenth) {
-			last_tenth = tenth_val;
-
-			if (tenth_val == 0) {
-				// synchronize the blink timer.
-				write_reg(MAX_REG_CONFIG, MAX_REG_CONFIG_B | MAX_REG_CONFIG_S | MAX_REG_CONFIG_E | MAX_REG_CONFIG_T);
-			}
-
-			struct tm lt;
-			localtime_r(&now.tv_sec, &lt);
-
-			unsigned char h = lt.tm_hour;
-			unsigned char pm = 0;
-			if (ampm) {
-				if (h == 0) { h = 12; }
-				else if (h == 12) { pm = 1; }
-				else if (h > 12) { h -= 12; pm = 1; }
-			}
-
-			unsigned char val = (unsigned char)(~_BV(7)); // All decode except 7.
-			if (ampm && h < 10) {
-				val &= ~_BV(DIGIT_10_HR); // for the 12 hour display, blank leading 0 for hour
-			}
-			if (!tenth) {
-				val &= ~_BV(DIGIT_100_MSEC); // turn off the tenth digit decode. We'll write a 0.
-			}
-			write_reg(MAX_REG_DEC_MODE, val);
-
-			write_reg(MAX_REG_MASK_BOTH | DIGIT_10_HR, h / 10);
-			write_reg(MAX_REG_MASK_BOTH | DIGIT_1_HR, h % 10);
-			write_reg(MAX_REG_MASK_BOTH | DIGIT_10_MIN, lt.tm_min / 10);
-			write_reg(MAX_REG_MASK_BOTH | DIGIT_1_MIN, lt.tm_min % 10);
-			write_reg(MAX_REG_MASK_BOTH | DIGIT_10_SEC, lt.tm_sec / 10);
-			write_reg(MAX_REG_MASK_BOTH | DIGIT_1_SEC, (lt.tm_sec % 10) | (tenth?MASK_DP:0));
-			write_reg(MAX_REG_MASK_BOTH | DIGIT_100_MSEC, tenth?tenth_val:0);
-
-			val = 0;
-			if (colon) {
-				val |= MASK_COLON_HM | MASK_COLON_MS;
-			}
-			if (ampm) {
-				val |= (pm?MASK_PM:MASK_AM);
-			}
-			write_reg(MAX_REG_MASK_BOTH | DIGIT_MISC, val);
-			if (colon_blink) {
-				// P1 gets the colons removed
-				write_reg(MAX_REG_MASK_P1 | DIGIT_MISC, val & ~(MASK_COLON_HM | MASK_COLON_MS));
-			}
-		}
-		struct timespec sleepspec;
-		sleepspec.tv_sec = 0;
-		sleepspec.tv_nsec = (time_remaining * 95) / 100;
-		nanosleep(&sleepspec, NULL);
 	}
 }
-
