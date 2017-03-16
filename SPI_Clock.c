@@ -47,6 +47,12 @@ For the RX pin, it has a diode + pull-up level shifter (with the pull-up from
 // system. YMMV. See the fprintf() in update_display().
 #define FUDGE (230L * 1000L)
 
+// Various fractions of a second's worth of nanoseconds
+// 1 nanosecond is one billion seconds
+#define SECOND_IN_NANOS (1000L * 1000L * 1000L)
+#define TENTH_IN_NANOS (SECOND_IN_NANOS / 10)
+#define HUNDREDTH_IN_NANOS (SECOND_IN_NANOS / 100)
+
 #define _BSD_SOURCE
 #define _POSIX_C_SOURCE 199309L
 
@@ -117,12 +123,13 @@ For the RX pin, it has a diode + pull-up level shifter (with the pull-up from
 #define DIGIT_100_MSEC (6)
 #define DIGIT_MISC (7)
 
-int spi_fd;
-timer_t timer_id;
-unsigned char ampm = 1; // 0 for a 24 hour display
-unsigned char colon = 1;
-unsigned char colon_blink = 0;
-unsigned char tenth = 1;
+// These things all get accessed across the thread boundary
+volatile int spi_fd;
+volatile timer_t timer_id;
+volatile unsigned char ampm = 1; // 0 for a 24 hour display
+volatile unsigned char colon = 1;
+volatile unsigned char colon_blink = 0;
+volatile unsigned char tenth = 1;
 
 static void write_reg(unsigned char reg, unsigned char data) {
 	// We write two bytes - the register number and then the data.
@@ -136,6 +143,7 @@ static void write_reg(unsigned char reg, unsigned char data) {
         tx_xfr.len = sizeof(msgbuf);
 	if (ioctl(spi_fd, SPI_IOC_MESSAGE(1), &tx_xfr) < 0) {
 		perror("ioctl(SPI_IOC_MESSAGE(1))");
+		exit(1);
 	}
 }
 
@@ -158,23 +166,23 @@ static void schedule_timer() {
 	struct timespec now;
 	if (clock_gettime(CLOCK_REALTIME, &now)) {
 		perror("clock_gettime");
+		exit(1);
 	}
 	// We want to round to the nearest tenth. We can start by tuncating to the nearest
 	// hundredth
-	unsigned int hundredth_val = (unsigned int)(now.tv_nsec / (10L * 1000L * 1000L));
+	unsigned int hundredth_val = (unsigned int)(now.tv_nsec / HUNDREDTH_IN_NANOS);
 	// We actually want the *next* tenth of a second.
 	unsigned int tenth_val = (hundredth_val + 5) / 10 + 1;
 	while (tenth_val >= 10) {
 		now.tv_sec++;
 		tenth_val -= 10;
 	}
-	now.tv_nsec = tenth_val * (100L * 1000L * 1000L);
 	// We want the alarm to go off a little early (FUDGE).
 	if (tenth_val != 0) {
-		now.tv_nsec -= FUDGE;
+		now.tv_nsec = tenth_val * TENTH_IN_NANOS - FUDGE;
 	} else {
 		// Backing up a bit from zero means crossing the second boundary.
-		now.tv_nsec = (1000L * 1000L * 1000L) - FUDGE;
+		now.tv_nsec = SECOND_IN_NANOS - FUDGE;
 		now.tv_sec--;
 	}
 	// We want to individually schedule each one rather than use the interval,
@@ -195,15 +203,16 @@ static void update_display(union sigval ignore) {
 	struct timespec now;
 	if (clock_gettime(CLOCK_REALTIME, &now)) {
 		perror("clock_gettime");
+		exit(1);
 	}
 
 	// This can be used to figure out the FUDGE value. You want this line
 	// to print small numbers (large ones that start with 99 are negative
 	// values in disguise).
-	//fprintf(stderr, "%ld\n", now.tv_nsec % (100L * 1000L * 1000L));
+	//fprintf(stderr, "%ld\n", now.tv_nsec % TENTH_IN_NANOS);
 
 	// We want to round to the nearest tenth, which means truncating to the nearest hundredth.
-	unsigned int hundredth_val = (unsigned int)(now.tv_nsec / (10L * 1000L * 1000L));
+	unsigned int hundredth_val = (unsigned int)(now.tv_nsec / HUNDREDTH_IN_NANOS);
 	unsigned int tenth_val = (hundredth_val + 5) / 10;
 	// if we rounded up, we must adjust the seconds.
 	while (tenth_val >= 10) {
@@ -294,13 +303,54 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	if (mlockall(MCL_FUTURE)) {
-		perror("mlockall");
+	if (background) {
+		if (daemon(0, 0)) {
+			perror("daemon");
+			exit(1);
+		}
 	}
+
 	struct sched_param sp;
 	sp.sched_priority = (sched_get_priority_max(SCHED_RR) - sched_get_priority_min(SCHED_RR))/2;
 	if (sched_setscheduler(0, SCHED_RR, &sp)) {
 		perror("sched_setscheduler");
+		exit(1);
+	}
+
+	pthread_attr_t my_pthread_attr;
+	if (pthread_attr_init(&my_pthread_attr) != 0) {
+		perror("pthread_attr_init");
+		exit(1);
+	}
+	if (pthread_attr_setdetachstate(&my_pthread_attr, PTHREAD_CREATE_DETACHED) != 0) {
+		perror("pthread_attr_setdetachstate");
+		exit(1);
+	}
+	if (pthread_attr_setschedpolicy(&my_pthread_attr, SCHED_RR) != 0) {
+		perror("pthread_attr_setschedpolicy");
+		exit(1);
+	}
+	sp.sched_priority = (sched_get_priority_max(SCHED_RR) - sched_get_priority_min(SCHED_RR))/2;
+	if (pthread_attr_setschedparam(&my_pthread_attr, &sp) != 0) {
+		perror("pthread_attr_setschedparam");
+		exit(1);
+	}
+	struct sigevent my_sigevent;
+	my_sigevent.sigev_notify = SIGEV_THREAD;
+	my_sigevent.sigev_value.sival_int = 0;
+	my_sigevent.sigev_notify_function = update_display;
+	my_sigevent.sigev_notify_attributes = NULL;//&my_pthread_attr;
+	if (timer_create(CLOCK_REALTIME, &my_sigevent, (timer_t*)&timer_id) != 0) {
+		perror("timer_create");
+		exit(1);
+	}
+	if (pthread_attr_destroy(&my_pthread_attr) != 0) {
+		perror("pthread_attr_destroy");
+		exit(1);
+	}
+
+	if (mlockall(MCL_CURRENT | MCL_FUTURE)) {
+		perror("mlockall");
 	}
 
 	spi_fd = open("/dev/spidev0.0", O_RDWR);
@@ -322,38 +372,19 @@ int main(int argc, char **argv) {
 
 	if (ioctl(spi_fd, SPI_IOC_WR_MODE, &spi_mode)) {
 		perror("ioctl(SPI_IOC_WR_MODE)");
+		exit(1);
 	}
 	if (ioctl(spi_fd, SPI_IOC_WR_BITS_PER_WORD, &spi_bits)) {
 		perror("ioctl(SPI_IOC_WR_BITS_PER_WORD)");
+		exit(1);
 	}
 	if (ioctl(spi_fd, SPI_IOC_WR_MAX_SPEED_HZ, &spi_speed)) {
 		perror("ioctl(SPI_IOC_WR_MAX_SPEED_HZ)");
+		exit(1);
 	}
 
 	signal(SIGINT, cleanup);
 	signal(SIGTERM, cleanup);
-	if (background) {
-		daemon(0, 0);
-	}
-
-	pthread_attr_t my_pthread_attr;
-	if (pthread_attr_init(&my_pthread_attr) < 0) {
-		perror("pthread_attr_init");
-		exit(1);
-	}
-	if (pthread_attr_setschedpolicy(&my_pthread_attr, SCHED_RR) < 0) {
-		perror("pthread_attr_setschedpolicy");
-		exit(1);
-	}
-	struct sigevent my_sigevent;
-	my_sigevent.sigev_notify = SIGEV_THREAD;
-	my_sigevent.sigev_value.sival_int = 0;
-	my_sigevent.sigev_notify_function = update_display;
-	my_sigevent.sigev_notify_attributes = &my_pthread_attr;
-	if (timer_create(CLOCK_REALTIME, &my_sigevent, &timer_id) < 0) {
-		perror("timer_create");
-		exit(1);
-	}
 
         // Turn off the shut-down register, clear the digit data
         write_reg(MAX_REG_CONFIG, MAX_REG_CONFIG_R | MAX_REG_CONFIG_B | MAX_REG_CONFIG_S | MAX_REG_CONFIG_E);
@@ -372,6 +403,7 @@ int main(int argc, char **argv) {
 		// Dirt nap
 		if (select(0, NULL, NULL, NULL, NULL) < 0) {
 			perror("select");
+			exit(1);
 		}
 	}
 }
