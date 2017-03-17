@@ -48,7 +48,7 @@ For the RX pin, it has a diode + pull-up level shifter (with the pull-up from
 #define FUDGE (230L * 1000L)
 
 // Various fractions of a second's worth of nanoseconds
-// 1 nanosecond is one billion seconds
+// There are one billion nanoseconds in one second
 #define SECOND_IN_NANOS (1000L * 1000L * 1000L)
 #define TENTH_IN_NANOS (SECOND_IN_NANOS / 10)
 #define HUNDREDTH_IN_NANOS (SECOND_IN_NANOS / 100)
@@ -138,8 +138,8 @@ static void write_reg(unsigned char reg, unsigned char data) {
 	msgbuf[1] = data;
 	struct spi_ioc_transfer tx_xfr;
 	memset(&tx_xfr, 0, sizeof(tx_xfr));
-	tx_xfr.tx_buf = (unsigned long)msgbuf;
-	tx_xfr.rx_buf = (unsigned long)NULL;
+	tx_xfr.tx_buf = (unsigned long)msgbuf; // Stupid Linux, why is it not a pointer?
+	// tx_xfr.rx_buf = (unsigned long)NULL; // redundant
         tx_xfr.len = sizeof(msgbuf);
 	if (ioctl(spi_fd, SPI_IOC_MESSAGE(1), &tx_xfr) < 0) {
 		perror("ioctl(SPI_IOC_MESSAGE(1))");
@@ -339,7 +339,7 @@ int main(int argc, char **argv) {
 	my_sigevent.sigev_notify = SIGEV_THREAD;
 	my_sigevent.sigev_value.sival_int = 0;
 	my_sigevent.sigev_notify_function = update_display;
-	my_sigevent.sigev_notify_attributes = NULL;//&my_pthread_attr;
+	my_sigevent.sigev_notify_attributes = &my_pthread_attr;
 	if (timer_create(CLOCK_REALTIME, &my_sigevent, (timer_t*)&timer_id) != 0) {
 		perror("timer_create");
 		exit(1);
