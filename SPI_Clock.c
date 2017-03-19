@@ -45,7 +45,7 @@ For the RX pin, it has a diode + pull-up level shifter (with the pull-up from
 // There is some latency in the system that must be accounted for.
 // This value is a guess based on observations made on a single
 // system. YMMV. See the fprintf() in update_display().
-#define FUDGE (230L * 1000L)
+#define FUDGE (250L * 1000L)
 
 // Various fractions of a second's worth of nanoseconds
 // There are one billion nanoseconds in one second
@@ -206,10 +206,13 @@ static void update_display(union sigval ignore) {
 		exit(1);
 	}
 
+#if 0
 	// This can be used to figure out the FUDGE value. You want this line
-	// to print small numbers (large ones that start with 99 are negative
-	// values in disguise).
-	//fprintf(stderr, "%ld\n", now.tv_nsec % TENTH_IN_NANOS);
+	// to print small numbers.
+	long error = now.tv_nsec % TENTH_IN_NANOS;
+	if (error > 5 * HUNDREDTH_IN_NANOS) error = - (TENTH_IN_NANOS - error);
+	fprintf(stderr, "%'8ld\n", error);
+#endif
 
 	// We want to round to the nearest tenth, which means truncating to the nearest hundredth.
 	unsigned int hundredth_val = (unsigned int)(now.tv_nsec / HUNDREDTH_IN_NANOS);
@@ -219,7 +222,6 @@ static void update_display(union sigval ignore) {
 		now.tv_sec++;
 		tenth_val -= 10;
 	}
-		
 
 	if (tenth_val == 0) {
 		// synchronize the blink timer.
