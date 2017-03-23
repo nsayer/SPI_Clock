@@ -129,7 +129,7 @@ volatile timer_t timer_id;
 volatile unsigned char ampm = 1; // 0 for a 24 hour display
 volatile unsigned char colon = 1;
 volatile unsigned char colon_blink = 0;
-volatile unsigned char tenth = 1;
+volatile unsigned char tenth_enable = 1;
 
 static void write_reg(unsigned char reg, unsigned char data) {
 	// We write two bytes - the register number and then the data.
@@ -239,34 +239,34 @@ static void update_display(union sigval ignore) {
 		else if (h > 12) { h -= 12; pm = 1; }
 	}
 
-	unsigned char val = (unsigned char)(~_BV(7)); // All decode except 7.
+	unsigned char decode_mask = (unsigned char)(~_BV(DIGIT_MISC)); // All decode except the misc digit.
 	if (ampm && h < 10) {
-		val &= ~_BV(DIGIT_10_HR); // for the 12 hour display, blank leading 0 for hour
+		decode_mask &= ~_BV(DIGIT_10_HR); // for the 12 hour display, blank leading 0 for hour
 	}
-	if (!tenth) {
-		val &= ~_BV(DIGIT_100_MSEC); // turn off the tenth digit decode. We'll write a 0.
+	if (!tenth_enable) {
+		decode_mask &= ~_BV(DIGIT_100_MSEC); // turn off the tenth digit decode. We'll write a 0.
 	}
-	write_reg(MAX_REG_DEC_MODE, val);
+	write_reg(MAX_REG_DEC_MODE, decode_mask);
 
 	write_reg(MAX_REG_MASK_BOTH | DIGIT_10_HR, h / 10);
 	write_reg(MAX_REG_MASK_BOTH | DIGIT_1_HR, h % 10);
 	write_reg(MAX_REG_MASK_BOTH | DIGIT_10_MIN, lt.tm_min / 10);
 	write_reg(MAX_REG_MASK_BOTH | DIGIT_1_MIN, lt.tm_min % 10);
 	write_reg(MAX_REG_MASK_BOTH | DIGIT_10_SEC, lt.tm_sec / 10);
-	write_reg(MAX_REG_MASK_BOTH | DIGIT_1_SEC, (lt.tm_sec % 10) | (tenth?MASK_DP:0));
-	write_reg(MAX_REG_MASK_BOTH | DIGIT_100_MSEC, tenth?tenth_val:0);
+	write_reg(MAX_REG_MASK_BOTH | DIGIT_1_SEC, (lt.tm_sec % 10) | (tenth_enable?MASK_DP:0));
+	write_reg(MAX_REG_MASK_BOTH | DIGIT_100_MSEC, tenth_enable?tenth_val:0);
 
-	val = 0;
+	unsigned char misc_digit = 0;
 	if (colon) {
-		val |= MASK_COLON_HM | MASK_COLON_MS;
+		misc_digit |= MASK_COLON_HM | MASK_COLON_MS;
 	}
 	if (ampm) {
-		val |= (pm?MASK_PM:MASK_AM);
+		misc_digit |= (pm?MASK_PM:MASK_AM);
 	}
-	write_reg(MAX_REG_MASK_BOTH | DIGIT_MISC, val);
+	write_reg(MAX_REG_MASK_BOTH | DIGIT_MISC, misc_digit);
 	if (colon_blink) {
 		// P1 gets the colons removed
-		write_reg(MAX_REG_MASK_P1 | DIGIT_MISC, val & ~(MASK_COLON_HM | MASK_COLON_MS));
+		write_reg(MAX_REG_MASK_P1 | DIGIT_MISC, misc_digit & ~(MASK_COLON_HM | MASK_COLON_MS));
 	}
 
 	// Set us up the bomb.
@@ -297,7 +297,7 @@ int main(int argc, char **argv) {
 				background = 0;
 				break;	
 			case 't':
-				tenth = 0;
+				tenth_enable = 0;
 				break;	
 			default:
 				usage();
