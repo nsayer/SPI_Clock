@@ -3,8 +3,9 @@ Description=PiClock
 After=multi-user.target
 
 [Service]
+EnvironmentFile=-/etc/default/piclock
 Type=forking
-ExecStart=/usr/bin/spiclock
+ExecStart=/usr/bin/spiclock $PICLOCK_OPTS
 TimeoutSec=0
 
 [Install]
