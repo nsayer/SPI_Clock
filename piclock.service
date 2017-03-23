@@ -1,0 +1,11 @@
+[Unit]
+Description=PiClock
+After=multi-user.target
+
+[Service]
+Type=forking
+ExecStart=/usr/bin/spiclock
+TimeoutSec=0
+
+[Install]
+WantedBy=multi-user.target
