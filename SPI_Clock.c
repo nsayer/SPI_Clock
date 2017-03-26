@@ -223,11 +223,6 @@ static void update_display(union sigval ignore) {
 		tenth_val -= 10;
 	}
 
-	if (tenth_val == 0) {
-		// synchronize the blink timer.
-		write_reg(MAX_REG_CONFIG, MAX_REG_CONFIG_B | MAX_REG_CONFIG_S | MAX_REG_CONFIG_E | MAX_REG_CONFIG_T);
-	}
-
 	struct tm lt;
 	localtime_r(&now.tv_sec, &lt);
 
@@ -257,17 +252,13 @@ static void update_display(union sigval ignore) {
 	write_reg(MAX_REG_MASK_BOTH | DIGIT_100_MSEC, tenth_enable?tenth_val:0);
 
 	unsigned char misc_digit = 0;
-	if (colon) {
+	if (colon && ((!colon_blink) || (now.tv_sec % 2 == 0))) {
 		misc_digit |= MASK_COLON_HM | MASK_COLON_MS;
 	}
 	if (ampm) {
 		misc_digit |= (pm?MASK_PM:MASK_AM);
 	}
 	write_reg(MAX_REG_MASK_BOTH | DIGIT_MISC, misc_digit);
-	if (colon_blink) {
-		// P1 gets the colons removed
-		write_reg(MAX_REG_MASK_P1 | DIGIT_MISC, misc_digit & ~(MASK_COLON_HM | MASK_COLON_MS));
-	}
 
 	// Set us up the bomb.
 	schedule_timer();
@@ -389,7 +380,7 @@ int main(int argc, char **argv) {
 	signal(SIGTERM, cleanup);
 
         // Turn off the shut-down register, clear the digit data
-        write_reg(MAX_REG_CONFIG, MAX_REG_CONFIG_R | MAX_REG_CONFIG_B | MAX_REG_CONFIG_S | MAX_REG_CONFIG_E);
+        write_reg(MAX_REG_CONFIG, MAX_REG_CONFIG_R | MAX_REG_CONFIG_S);
         write_reg(MAX_REG_SCAN_LIMIT, 7); // display all 8 digits
         write_reg(MAX_REG_INTENSITY, brightness);
 
