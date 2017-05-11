@@ -11,6 +11,12 @@ Compile with:
 
 cc -O -std=c11 -Wall -o spiclock SPI_Clock.c -lrt
 
+Alternatively, there's an SPI_Sidereal.c that will display the Local Mean Sidereal Time
+if you give it your longitude on the command line, or Greenwich Mean Sidereal Time by
+default. Note that while the tenth-of-a-second is calculated in sidereal time, the clock
+update cycles are still in UTC. The implication is that you probably want to turn the
+tenths off as they may not be particularly accurate.
+
 You can use SPI_Clock_recipe.xml as a PiBakery recipe for a custom Raspbian
 SD card. You can use it to customize the configuration without having
 to log into your Pi.
