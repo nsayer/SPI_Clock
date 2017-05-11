@@ -140,7 +140,7 @@ static void write_reg(unsigned char reg, unsigned char data) {
 	memset(&tx_xfr, 0, sizeof(tx_xfr));
 	tx_xfr.tx_buf = (unsigned long)msgbuf; // Stupid Linux, why is it not a pointer?
 	// tx_xfr.rx_buf = (unsigned long)NULL; // redundant
-        tx_xfr.len = sizeof(msgbuf);
+	tx_xfr.len = sizeof(msgbuf);
 	if (ioctl(spi_fd, SPI_IOC_MESSAGE(1), &tx_xfr) < 0) {
 		perror("ioctl(SPI_IOC_MESSAGE(1))");
 		exit(1);
@@ -379,14 +379,14 @@ int main(int argc, char **argv) {
 	signal(SIGINT, cleanup);
 	signal(SIGTERM, cleanup);
 
-        // Turn off the shut-down register, clear the digit data
-        write_reg(MAX_REG_CONFIG, MAX_REG_CONFIG_R | MAX_REG_CONFIG_S);
-        write_reg(MAX_REG_SCAN_LIMIT, 7); // display all 8 digits
-        write_reg(MAX_REG_INTENSITY, brightness);
+	// Turn off the shut-down register, clear the digit data
+	write_reg(MAX_REG_CONFIG, MAX_REG_CONFIG_R | MAX_REG_CONFIG_S);
+	write_reg(MAX_REG_SCAN_LIMIT, 7); // display all 8 digits
+	write_reg(MAX_REG_INTENSITY, brightness);
 
-        write_reg(MAX_REG_TEST, 1);
-        sleep(1);
-        write_reg(MAX_REG_TEST, 0);
+	write_reg(MAX_REG_TEST, 1);
+	sleep(1);
+	write_reg(MAX_REG_TEST, 0);
 
 	// Force the first update. It will schedule everything after.
 	union sigval ignore;
