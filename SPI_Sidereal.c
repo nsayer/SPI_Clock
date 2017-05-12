@@ -229,7 +229,7 @@ static void update_display(union sigval ignore) {
 	long double T = (JD - (EPOCH_JDATE + .5)) / 36525.0;
 
 	long double gmst = (6.697374558L + 0.06570982441908L * D0 + 1.00273790935L * H) + 0.000026 * T * T;
-	gmst += (longitude / 365.0L) * 24.0L;
+	gmst += (longitude / 360.0L) * 24.0L;
 	while (gmst > 24.0) gmst -= 24.0;
 	int h = (int)gmst;
 	int m = (int)((gmst - h) * 60);
