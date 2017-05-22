@@ -34,12 +34,6 @@ DIN: pin 21: SPI0_MOSI / GPIO 10
 CLK: pin 23: SPI0_SCLK / GPIO 11
 !CS: pin 24: SPI0_CE0_N / GPIO 8
 
-The clock board will also supply 5 volts to pins 2 and 4 to power the Pi.
-
-It will additionally break out the UART0 TX and RX pins to a 3 pin header.
-For the RX pin, it has a diode + pull-up level shifter (with the pull-up from
-3V3 on pin 1).
-
 */
 
 // There is some latency in the system that must be accounted for.
