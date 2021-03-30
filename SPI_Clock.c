@@ -48,6 +48,7 @@ CLK: pin 23: SPI0_SCLK / GPIO 11
 #define HUNDREDTH_IN_NANOS (SECOND_IN_NANOS / 100)
 
 #define _BSD_SOURCE
+#define _DEFAULT_SOURCE
 #define _POSIX_C_SOURCE 199309L
 
 #include <unistd.h>
