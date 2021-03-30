@@ -59,6 +59,7 @@ For the RX pin, it has a diode + pull-up level shifter (with the pull-up from
 #define EPOCH_JDATE (2451544.5)
 
 #define _BSD_SOURCE
+#define _DEFAULT_SOURCE
 #define _POSIX_C_SOURCE 199309L
 
 #include <unistd.h>
